@@ -1,0 +1,73 @@
+# Stage 1: Build stage
+FROM node:20-alpine AS builder
+    # Install system dependencies needed for building
+    RUN apk add --no-cache make g++ python3 vips-dev libc6-compat
+
+    # Install pnpm globally
+    RUN npm install -g pnpm@9.1.1
+
+    WORKDIR /app/code
+
+    # Copy package files first for better layer caching
+    COPY --chown=1000:1000 relm/package.json relm/pnpm-lock.yaml relm/pnpm-workspace.yaml relm/turbo.json ./
+    COPY --chown=1000:1000 relm/client/package.json client/
+    COPY --chown=1000:1000 relm/server/package.json server/
+    COPY --chown=1000:1000 relm/common/package.json common/
+
+    # Install dependencies
+    RUN pnpm install --frozen-lockfile
+
+    # Copy remaining source files
+    COPY --chown=1000:1000 ./relm .
+
+    # Create dist directories and build
+    ENV TURBO_TELEMETRY_DISABLED=1
+    RUN pnpm run build
+
+    RUN pnpm deploy --filter=relm-server --prod /app/deploy/server
+
+# Stage 2: Runtime stage
+FROM node:20-alpine
+    # Install runtime dependencies
+    RUN apk add --no-cache curl postgresql-client vips supervisor
+
+    # Install Caddy from local vendor file
+    COPY vendor/caddy_2.10.0_linux_amd64.tar.gz /tmp/caddy.tar.gz
+    RUN tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin/ && \
+        chmod +x /usr/local/bin/caddy && \
+        rm /tmp/caddy.tar.gz
+
+    # Create app directory and non-root user
+    RUN addgroup -S cloudron && adduser -S cloudron -G cloudron
+
+    RUN mkdir -p /app/data /app/code /app/config && \
+        chown cloudron:cloudron /app/data /app/code /app/config
+
+    COPY --chown=cloudron:cloudron entrypoint.sh /entrypoint.sh
+    RUN chmod +x /entrypoint.sh
+
+    WORKDIR /app/code
+    USER cloudron
+
+    # Copy built files from builder
+    COPY --from=builder --chown=cloudron:cloudron /app/code/client/dist ./client/dist
+    COPY --from=builder --chown=cloudron:cloudron /app/code/client/public ./client/public
+    COPY --from=builder --chown=cloudron:cloudron /app/deploy/server ./server
+
+    # Set up Cloudron required directories
+    RUN mkdir -p /app/data/assets && chown cloudron:cloudron /app/data/assets
+    RUN mkdir -p /app/data/tmp && chown cloudron:cloudron /app/data/tmp
+
+    # Health check endpoint
+    HEALTHCHECK --interval=30s --timeout=3s \
+    CMD curl -f http://localhost:3000/api/ || exit 1
+
+    # Copy Caddyfile
+    COPY --chown=cloudron:cloudron Caddyfile /app/config/
+
+    # Copy supervisor config
+    COPY --chown=cloudron:cloudron supervisor.conf /app/config/
+
+    # Start command
+    ENTRYPOINT ["/entrypoint.sh"]
+    CMD ["/usr/bin/supervisord", "-c", "/app/config/supervisor.conf"]

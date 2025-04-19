@@ -1,0 +1,25 @@
+{
+	"id": "us.relm.relm",
+	"title": "Relm",
+	"author": "Duane Johnson <duane@relm.us>",
+	"description": "3D spatial platform for virtual meetings and collaboration",
+	"tagline": "Togetherness in virtual spaces",
+	"version": "1.0.0",
+	"healthCheckPath": "/",
+	"httpPort": 3000,
+	"addons": {
+		"postgresql": {},
+		"localstorage": {}
+	},
+	"manifestVersion": 2,
+	"website": "https://relm.us",
+	"contactEmail": "support@relm.us",
+	"icon": "file://client/public/favicon.png",
+	"mediaLinks": [
+		"https://github.com/relm-us/relm/blob/main/docs/scr2-whiteboard.jpg?raw=true",
+		"https://github.com/relm-us/relm/blob/main/docs/scr3-pineforest.jpg?raw=true"
+	],
+	"capabilities": [],
+	"memoryLimit": 1073741824,
+	"postInstallMessage": "Visit /admin?token=setup to initialize your first world"
+}
